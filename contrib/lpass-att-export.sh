@@ -1,16 +1,26 @@
 #!/bin/bash
-##
-## Usage: lpass-att-export.sh
-##
-##
+# Complete LastPass backup: CSV, JSON, attachments in subfolders by ID
+# Usage: lpass-att-export.sh [-l <email>] [-o <outdir>]
 
-usage() { echo "Usage: $0 [-l <email>] [-o <outdir>] [-i <id>]" 1>&2; exit 1; }
+# --- Cross-platform sed function (gsed on macOS, sed on Linux) ---
+if [[ "$(uname)" == "Darwin" ]]; then
+  if ! command -v gsed >/dev/null 2>&1; then
+    echo "[INFO] gsed not found, installing with brew..."
+    brew install gnu-sed || { echo "Failed to install gsed"; exit 1; }
+  fi
+  SED_BIN="gsed"
+else
+  SED_BIN="sed"
+fi
 
-while getopts ":i:o:hl:" o; do
+sed_compat() {
+  $SED_BIN "$@"
+}
+
+usage() { echo "Usage: $0 [-l <email>] [-o <outdir>]" 1>&2; exit 1; }
+
+while getopts ":o:hl:" o; do
     case "${o}" in
-        i)
-            id=${OPTARG}
-            ;;
         o)
             outdir=${OPTARG}
             ;;
@@ -24,6 +34,7 @@ while getopts ":i:o:hl:" o; do
             usage
             ;;
     esac
+
 done
 shift $((OPTIND-1))
 
@@ -31,54 +42,63 @@ if [ -z "${outdir}" ]; then
     usage
 fi
 
-command -v lpass >/dev/null 2>&1 || { echo >&2 "I require lpass but it's not installed.  Aborting."; exit 1; }
+command -v lpass >/dev/null 2>&1 || { echo >&2 "lpass is required but not installed. Aborting."; exit 1; }
 
 if [ ! -d ${outdir} ]; then
-  echo "${outdir} does not exist. Exiting."
-  exit 1
+  echo "${outdir} does not exist. Creating directory."
+  mkdir -p "${outdir}" || { echo "Failed to create directory ${outdir}."; exit 1; }
 fi
 
 if ! lpass status; then
   if [ -z ${email} ]; then
-    echo "No login data found, Please login with -l or use lpass login before."
+    echo "No login data found. Please login with -l or use lpass login before running this script."
     exit 1;
   fi
   lpass login ${email}
 fi
 
-if [ -z ${id} ]; then
-  ids=$(lpass ls | sed -n "s/^.*id:\s*\([0-9]*\).*$/\1/p")
-else
-  ids=${id}
-fi
+# 1. CSV backup
+lpass export > "${outdir}/lastpass-backup.csv"
 
+# 2. JSON backup (valid array)
+ids=$(lpass ls | sed_compat -n "s/^.*id:\s*\([0-9]*\).*$/\1/p")
+echo "[" > "${outdir}/lastpass-backup.json"
+first=1
 for id in ${ids}; do
-  show=$(lpass show ${id})
-  attcount=$(echo "${show}" | grep -c "att-")
-  path=$(lpass show --format="%/as%/ag%an" ${id} | uniq | tail -1)
-
-  until [  ${attcount} -lt 1 ]; do
-    att=`lpass show ${id} | grep att- | sed "${attcount}q;d" | tr -d :`
-    attid=$(echo ${att} | awk '{print $1}')
-    attname=$(echo ${att} | awk '{print $2}')
-
-    if [[ -z  ${attname}  ]]; then
-      attname=${path#*/}
+  json=$(lpass show -j $id 2>/dev/null)
+  if [[ -n "$json" ]]; then
+    if [[ $first -eq 0 ]]; then
+      echo "," >> "${outdir}/lastpass-backup.json"
     fi
+    echo "$json" >> "${outdir}/lastpass-backup.json"
+    first=0
+  fi
+done
+echo "]" >> "${outdir}/lastpass-backup.json"
 
-    path=${path//\\//}
-    mkdir -p "${outdir}/${path}"
-    out=${outdir}/${path}/${attname}
-
-    if [[ -f ${out} ]]; then
-        out=${outdir}/${path}/${attcount}_${attname}
-    fi
-
-    echo ${id} - ${path} ": " ${attid} "-" ${attname} " > " ${out}
-
-    lpass show --attach=${attid} ${id} --quiet > "${out}"
-
-    let attcount-=1
-  done
+# 3. Attachments backup in subfolders by secret ID
+mkdir -p "${outdir}/attachments"
+ids=$(lpass ls | sed_compat -n "s/^.*id:\s*\([0-9]*\).*$/\1/p")
+for id in ${ids}; do
+  attlist=$(lpass show ${id} | grep att-)
+  if [ -n "$attlist" ]; then
+    mkdir -p "${outdir}/attachments/${id}"
+    attcount=$(echo "$attlist" | wc -l)
+    for ((i=1; i<=attcount; i++)); do
+      attline=$(echo "$attlist" | sed_compat -n "${i}p")
+      attid=$(echo "$attline" | awk '{print $1}' | tr -d ':')
+      attname=$(echo "$attline" | cut -d' ' -f2-)
+      if [[ -z $attname ]]; then
+        attname="attachment_${attid}"
+      fi
+      attname=$(echo "$attname" | sed_compat 's/^ *//;s/ *$//')
+      out="${outdir}/attachments/${id}/${attname}"
+      if [[ -f $out ]]; then
+        out="${outdir}/attachments/${id}/${i}_$attname"
+      fi
+      echo "Exporting attachment: $id/$attname -> $out"
+      lpass show --attach=${attid} ${id} --quiet > "$out"
+    done
+  fi
 done
 
