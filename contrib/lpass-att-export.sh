@@ -57,21 +57,26 @@ if ! lpass status; then
   lpass login ${email}
 fi
 
+DEBUG_LOG="${outdir}/backup-debug.log"
+echo "[DEBUG] LastPass backup started at $(date)" > "$DEBUG_LOG"
+
 # 1. CSV backup
-lpass export > "${outdir}/lastpass-backup.csv"
+lpass export > "${outdir}/lastpass-backup.csv" 2>>"$DEBUG_LOG"
 
 # 2. JSON backup (valid array)
 ids=$(lpass ls | sed_compat -n "s/^.*id:\s*\([0-9]*\).*$/\1/p")
 echo "[" > "${outdir}/lastpass-backup.json"
 first=1
 for id in ${ids}; do
-  json=$(lpass show -j $id 2>/dev/null)
+  json=$(lpass show -j $id 2>>"$DEBUG_LOG")
   if [[ -n "$json" ]]; then
     if [[ $first -eq 0 ]]; then
       echo "," >> "${outdir}/lastpass-backup.json"
     fi
     echo "$json" >> "${outdir}/lastpass-backup.json"
     first=0
+  else
+    echo "[ERROR] Could not export JSON for account id $id" >> "$DEBUG_LOG"
   fi
 done
 echo "]" >> "${outdir}/lastpass-backup.json"
@@ -80,7 +85,7 @@ echo "]" >> "${outdir}/lastpass-backup.json"
 mkdir -p "${outdir}/attachments"
 ids=$(lpass ls | sed_compat -n "s/^.*id:\s*\([0-9]*\).*$/\1/p")
 for id in ${ids}; do
-  attlist=$(lpass show ${id} | grep att-)
+  attlist=$(lpass show ${id} 2>>"$DEBUG_LOG" | grep att-)
   if [ -n "$attlist" ]; then
     mkdir -p "${outdir}/attachments/${id}"
     attcount=$(echo "$attlist" | wc -l)
@@ -96,9 +101,14 @@ for id in ${ids}; do
       if [[ -f $out ]]; then
         out="${outdir}/attachments/${id}/${i}_$attname"
       fi
-      echo "Exporting attachment: $id/$attname -> $out"
-      lpass show --attach=${attid} ${id} --quiet > "$out"
+      echo "Exporting attachment: $id/$attname -> $out" | tee -a "$DEBUG_LOG"
+      lpass show --attach=${attid} ${id} --quiet > "$out" 2>>"$DEBUG_LOG"
+      if [[ $? -ne 0 ]]; then
+        echo "[ERROR] Failed to export attachment $attid ($attname) for account id $id" >> "$DEBUG_LOG"
+      fi
     done
   fi
 done
+
+echo "[DEBUG] LastPass backup finished at $(date)" >> "$DEBUG_LOG"
 
