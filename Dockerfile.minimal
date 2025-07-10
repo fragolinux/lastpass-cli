@@ -1,0 +1,53 @@
+# Minimal Dockerfile for environments with network restrictions
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Use built-in packages when possible
+RUN apt-get update && \
+    apt-get install -y \
+        build-essential \
+        cmake \
+        pkg-config \
+        libcurl4-openssl-dev \
+        libxml2-dev \
+        libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy source code
+WORKDIR /src
+COPY . .
+
+# Build binary
+RUN mkdir -p build && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j$(nproc) && \
+    strip lpass
+
+# Final minimal runtime image
+FROM ubuntu:22.04
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        libxml2 \
+        libssl3 \
+        bash && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy the binary
+COPY --from=builder /src/build/lpass /usr/local/bin/lpass
+
+# Create directories for volume mounts
+RUN mkdir -p /backup /output /logs /data
+
+# Set working directory
+WORKDIR /data
+
+# Default entrypoint
+ENTRYPOINT ["/usr/local/bin/lpass"]
+
+# Add labels
+LABEL org.opencontainers.image.description="LastPass CLI - minimal build"
+LABEL org.opencontainers.image.source="https://github.com/fragolinux/lastpass-cli"
