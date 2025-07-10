@@ -3,6 +3,30 @@
 
 Command line interface to [LastPass.com](https://lastpass.com/).
 
+## Quick Installation
+
+### Pre-built Binaries
+
+Download the latest pre-built binaries from the [Releases page](https://github.com/fragolinux/lastpass-cli/releases):
+
+- **Linux x86_64**: `lpass-linux-x86_64.tar.gz`
+- **Linux ARM64**: `lpass-linux-arm64.tar.gz`
+- **macOS**: `lpass-macos.tar.gz`
+- **Windows**: `lpass-windows.zip`
+
+Extract the binary and place it in your PATH.
+
+### Docker
+
+Run with Docker:
+```bash
+# Latest version
+docker run --rm -it ghcr.io/fragolinux/lastpass-cli:latest
+
+# Specific version
+docker run --rm -it ghcr.io/fragolinux/lastpass-cli:1.0.0
+```
+
 ## Operating System Support
 
 `lpass` is designed to run on GNU/Linux, Cygwin and Mac OS X.

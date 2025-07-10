@@ -3,6 +3,7 @@ name: Docker Build and Push
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*.*.*', '*.*.*' ]  # Also trigger on version tags
   pull_request:
     branches: [ main, master ]
   release:
@@ -71,8 +72,10 @@ jobs:
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
           type=semver,pattern={{major}}
-          type=sha
+          type=sha,prefix=sha-
           type=raw,value=latest,enable={{is_default_branch}}
+        flavor: |
+          latest=auto
 
     # Try simple Ubuntu-based build first
     - name: Build and push simple Docker image
@@ -86,10 +89,12 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        provenance: false  # Disable provenance to avoid unknown/unknown
+        sbom: false        # Disable SBOM to avoid unknown/unknown
       continue-on-error: true
       id: simple-build
     
-    # Fallback to Debian-based build if Alpine fails
+    # Fallback to Debian-based build if simple fails
     - name: Build and push Debian Docker image (fallback)
       if: steps.simple-build.outcome == 'failure'
       uses: docker/build-push-action@v5
@@ -102,6 +107,8 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        provenance: false  # Disable provenance to avoid unknown/unknown
+        sbom: false        # Disable SBOM to avoid unknown/unknown
       continue-on-error: true
       id: debian-build
 
@@ -118,6 +125,8 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        provenance: false  # Disable provenance to avoid unknown/unknown
+        sbom: false        # Disable SBOM to avoid unknown/unknown
       continue-on-error: true
       id: minimal-build
 
@@ -134,3 +143,5 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        provenance: false  # Disable provenance to avoid unknown/unknown
+        sbom: false        # Disable SBOM to avoid unknown/unknown
