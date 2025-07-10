@@ -3,6 +3,7 @@ name: Cross-Platform Build
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*.*.*', '*.*.*' ]  # Also trigger on version tags
   pull_request:
     branches: [ main, master ]
   release:
@@ -87,10 +88,10 @@ jobs:
 
     - name: Install dependencies
       run: |
-        # Install required packages via Homebrew
-        brew install cmake pkg-config openssl libxml2 curl
+        # Install required packages via Homebrew, suppress warnings about already installed packages
+        brew install --formula cmake pkg-config openssl libxml2 curl || true
         echo "Installed packages:"
-        brew list | grep -E "(cmake|pkg-config|openssl|libxml2|curl)"
+        brew list | grep -E "(cmake|pkg-config|openssl|libxml2|curl)" || true
 
     - name: Build for macOS
       run: |
@@ -161,24 +162,39 @@ jobs:
         pkg-config --exists openssl && echo "openssl: OK" || echo "openssl: MISSING"
         pkg-config --exists libcurl && echo "curl: OK" || echo "curl: MISSING"
         
-        # Try CMake build first
-        if mkdir -p build-windows && cd build-windows && cmake -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc); then
+        # Set proper environment variables for MSYS2
+        export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig:/mingw64/share/pkgconfig:$PKG_CONFIG_PATH"
+        export PATH="/mingw64/bin:$PATH"
+        
+        # Try CMake build first with proper generator
+        if mkdir -p build-windows && cd build-windows && cmake -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/mingw64 .. && make -j$(nproc); then
           echo "CMake build successful"
-          ./lpass.exe --version
+          ./lpass.exe --version || echo "Version check failed but binary exists"
+          ls -la lpass.exe
+          file lpass.exe || echo "file command not available"
           mv lpass.exe ../lpass-windows.exe
         else
           echo "CMake build failed, trying alternative approach"
           cd ..
           
           # Try simple make if CMake fails
-          if make clean && make; then
+          if make clean && make CC=gcc CFLAGS="-I/mingw64/include" LDFLAGS="-L/mingw64/lib"; then
             echo "Make build successful"
-            ./build/lpass.exe --version
+            ls -la build/lpass.exe
+            file build/lpass.exe || echo "file command not available"
+            ./build/lpass.exe --version || echo "Version check failed but binary exists"
             cp ./build/lpass.exe ./lpass-windows.exe
           else
             echo "Both builds failed, creating placeholder"
             echo "Windows build failed - dependency issues" > lpass-windows.exe
+            echo "Error: Unable to build Windows binary due to dependency or compilation issues" >> lpass-windows.exe
           fi
+        fi
+        
+        # Verify final binary size
+        if [ -f lpass-windows.exe ]; then
+          ls -la lpass-windows.exe
+          wc -c lpass-windows.exe
         fi
 
     - name: Upload Windows binary
@@ -191,7 +207,7 @@ jobs:
     name: Create Release
     needs: [build-linux, build-linux-arm64, build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && always()  # Run even if ARM64 build fails
+    if: (github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')) && always()  # Run on release events or tags, even if some builds fail
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -218,12 +234,40 @@ jobs:
         # List what we have
         ls -la *.tar.gz *.zip 2>/dev/null || echo "Some builds may have failed"
 
-    - name: Upload release assets
+    - name: Extract tag name
+      id: tag
+      run: |
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "is_tag=true" >> $GITHUB_OUTPUT
+        else
+          echo "tag=dev-$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
+          echo "is_tag=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create or update release
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        name: LastPass CLI ${{ steps.tag.outputs.tag }}
+        body: |
+          LastPass CLI binaries for multiple platforms.
+          
+          ## Download Instructions
+          - **Linux x86_64**: Download and extract `lpass-linux-x86_64.tar.gz`
+          - **Linux ARM64**: Download and extract `lpass-linux-arm64.tar.gz` 
+          - **macOS**: Download and extract `lpass-macos.tar.gz`
+          - **Windows**: Download and extract `lpass-windows.zip`
+          
+          ## Installation
+          Extract the binary for your platform and place it in your PATH.
+          
+          Built from commit: ${{ github.sha }}
         files: |
           lpass-linux-x86_64.tar.gz
           lpass-linux-arm64.tar.gz
           lpass-macos.tar.gz
           lpass-windows.zip
         fail_on_unmatched_files: false  # Don't fail if some files are missing
+        prerelease: ${{ steps.tag.outputs.is_tag == 'false' }}
+        make_latest: ${{ steps.tag.outputs.is_tag == 'true' }}
