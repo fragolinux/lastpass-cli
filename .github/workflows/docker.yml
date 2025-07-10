@@ -24,29 +24,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # Try to build binary on host for fallback
-    - name: Setup build dependencies
-      run: |
-        sudo apt-get update || true
-        sudo apt-get install -y --no-install-recommends \
-          build-essential \
-          cmake \
-          pkg-config \
-          libcurl4-openssl-dev \
-          libxml2-dev \
-          libssl-dev || true
-      continue-on-error: true
-
-    - name: Build binary on host (fallback for Docker)
-      run: |
-        make clean || true
-        make || echo "Host build failed, will try Docker build"
-        if [ -f build/lpass ]; then
-          cp build/lpass ./lpass
-          echo "Host binary built successfully"
-        fi
-      continue-on-error: true
-
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
 
@@ -77,26 +54,7 @@ jobs:
         flavor: |
           latest=auto
 
-    # Try simple Ubuntu-based build first
-    - name: Build and push simple Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile.simple
-        platforms: linux/amd64,linux/arm64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        provenance: false  # Disable provenance to avoid unknown/unknown
-        sbom: false        # Disable SBOM to avoid unknown/unknown
-      continue-on-error: true
-      id: simple-build
-    
-    # Fallback to Debian-based build if simple fails
-    - name: Build and push Debian Docker image (fallback)
-      if: steps.simple-build.outcome == 'failure'
+    - name: Build and push Alpine Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -107,41 +65,5 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        provenance: false  # Disable provenance to avoid unknown/unknown
-        sbom: false        # Disable SBOM to avoid unknown/unknown
-      continue-on-error: true
-      id: debian-build
-
-    # If both fail, try the pre-built minimal dockerfile
-    - name: Build minimal fallback image
-      if: steps.simple-build.outcome == 'failure' && steps.debian-build.outcome == 'failure'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile.minimal
-        platforms: linux/amd64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        provenance: false  # Disable provenance to avoid unknown/unknown
-        sbom: false        # Disable SBOM to avoid unknown/unknown
-      continue-on-error: true
-      id: minimal-build
-
-    # Final fallback: offline build with pre-built binary
-    - name: Build offline fallback image
-      if: steps.simple-build.outcome == 'failure' && steps.debian-build.outcome == 'failure' && steps.minimal-build.outcome == 'failure'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile.offline
-        platforms: linux/amd64
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        provenance: false  # Disable provenance to avoid unknown/unknown
-        sbom: false        # Disable SBOM to avoid unknown/unknown
+        provenance: false
+        sbom: false

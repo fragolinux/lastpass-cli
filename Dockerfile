@@ -1,3 +1,4 @@
+# Multi-stage build: builder (Debian) + final (Debian)
 FROM debian:bookworm-slim AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,37 +26,31 @@ RUN mkdir -p build && \
     make -j$(nproc) && \
     strip lpass
 
-# Final runtime image - use the builder image to avoid dependency mismatches
+# Final runtime image (Debian)
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install only essential runtime dependencies
+# Install runtime tools and dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        jq \
+        bash \
+        ca-certificates \
         curl \
         libxml2 \
-        libssl3 \
-        libcurl4 \
-        bash \
-        ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+        openssl \
+        keepassxc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install jq and yq if available, with graceful fallbacks
-RUN apt-get update && \
-    (apt-get install -y --no-install-recommends jq || true) && \
-    rm -rf /var/lib/apt/lists/* && \
-    # Create fallback scripts if packages are not available
-    if ! command -v jq &> /dev/null; then \
-        echo '#!/bin/bash' > /usr/local/bin/jq && \
-        echo 'echo "jq not available" >&2 && exit 1' >> /usr/local/bin/jq && \
-        chmod +x /usr/local/bin/jq; \
-    fi && \
-    if ! command -v yq &> /dev/null; then \
-        echo '#!/bin/bash' > /usr/local/bin/yq && \
-        echo 'echo "yq not available, use jq instead" >&2 && jq "$@"' >> /usr/local/bin/yq && \
-        chmod +x /usr/local/bin/yq; \
-    fi
+# Install yq multiarch (usando curl invece di wget)
+ARG YQ_VERSION="v4.46.1"
+RUN set -e; \
+    TARGETOS="linux"; \
+    TARGETARCH="$(dpkg --print-architecture | sed 's/arm64/arm64/;s/amd64/amd64/;s/i386/386/')"; \
+    YQ_BINARY="yq_${TARGETOS}_${TARGETARCH}"; \
+    curl -sSL -o /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}" && \
+    chmod +x /usr/local/bin/yq
 
 # Copy the binary
 COPY --from=builder /src/build/lpass /usr/local/bin/lpass
@@ -69,12 +64,9 @@ RUN find /usr/local/share/lastpass-cli/contrib -name "*.sh" -exec chmod +x {} \;
 # Create directories for volume mounts
 RUN mkdir -p /backup /output /logs /data
 
-# Set working directory
 WORKDIR /data
 
-# Default entrypoint - can be overridden
 ENTRYPOINT ["/usr/local/bin/lpass"]
 
-# Add a label for better identification
-LABEL org.opencontainers.image.description="LastPass CLI with additional tools on Debian"
+LABEL org.opencontainers.image.description="LastPass CLI with additional tools (jq, yq, keepassxc-cli) on Debian Linux"
 LABEL org.opencontainers.image.source="https://github.com/fragolinux/lastpass-cli"
