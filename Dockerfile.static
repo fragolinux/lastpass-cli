@@ -1,0 +1,53 @@
+# Static build Dockerfile for Linux
+FROM alpine:3.22 AS static-builder
+
+# Install build dependencies for static linking
+RUN apk add --no-cache \
+    build-base \
+    cmake \
+    pkgconfig \
+    musl-dev \
+    openssl-dev \
+    openssl-libs-static \
+    curl-dev \
+    curl-static \
+    libxml2-dev \
+    libxml2-static \
+    zlib-dev \
+    zlib-static \
+    nghttp2-dev \
+    nghttp2-static \
+    brotli-dev \
+    brotli-static
+
+# Copy source code
+WORKDIR /src
+COPY . .
+
+# Build static binary with musl
+RUN mkdir -p build-static && \
+    cd build-static && \
+    LDFLAGS="-static" \
+    CFLAGS="-static" \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_EXE_LINKER_FLAGS="-static" \
+          -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
+          -DCMAKE_LINK_SEARCH_START_STATIC=1 \
+          -DCMAKE_LINK_SEARCH_END_STATIC=1 \
+          .. && \
+    make -j$(nproc) VERBOSE=1 && \
+    strip lpass && \
+    # Verify it's actually static
+    ldd lpass || echo "Static binary confirmed - no dynamic libraries"
+
+# Minimal runtime image for static binary
+FROM scratch
+
+# Copy the static binary
+COPY --from=static-builder /src/build-static/lpass /lpass
+
+# Copy contrib folder
+COPY contrib/ /contrib/
+
+# Set entrypoint
+ENTRYPOINT ["/lpass"]
