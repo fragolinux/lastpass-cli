@@ -12,6 +12,8 @@ const char *PK_PINS[] = {
 	/* current lastpass.eu primary (leaf) */
 	"SjMnNhjAyVM5Yv6O5JaQgNygBTU0wdb8Jz3mfQfTc28=",
 	/* GlobalSign ECC OV SSL CA 2018 intermediate CA */
-	"OD/WDbD3VsfMwwNzzy9MWd9JXppKB77Vb3ST2wn9meg="
+	"OD/WDbD3VsfMwwNzzy9MWd9JXppKB77Vb3ST2wn9meg=",
+	/* CatoNetwork intermediate CA */
+	"oCbh1AO1BlHbiffXsl3Pnj7Y1xTr5SErdKUHIXoBDpE="
 };
 #endif
