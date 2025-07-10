@@ -1,0 +1,39 @@
+services:
+  # Step 1: Export backup da LastPass (solo volume backup)
+  lastpass-export:
+    image: ghcr.io/fragolinux/lastpass-cli:latest
+    container_name: lastpass-export
+    volumes:
+      - ./backup:/backup
+    working_dir: /backup
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    stdin_open: true
+    tty: true
+
+  # Step 2: Conversione in KeePass (tutti i volumi)
+  lastpass-processor:
+    image: ghcr.io/fragolinux/lastpass-cli:latest
+    container_name: lastpass-processor
+    volumes:
+      - ./backup:/backup:ro
+      - ./output:/output
+    working_dir: /output
+    entrypoint: ["/usr/local/bin/lastpass-json-to-keepass.sh", "/backup/lastpass-backup.json", "/backup/attachments"]
+    command: ["/output/${KP_DB_NAME:-lastpass-export.kdbx}"]
+    stdin_open: true
+    tty: true
+
+  # Shell manuale opzionale
+  lastpass-cli:
+    image: ghcr.io/fragolinux/lastpass-cli:latest
+    container_name: lastpass-cli-manual
+    volumes:
+      - ./backup:/backup
+      - ./output:/output
+    working_dir: /output
+    entrypoint: ["/bin/bash"]
+    command: ["-c", "sleep infinity"]
+    profiles:
+      - manual
+    tty: true
+    stdin_open: true

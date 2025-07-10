@@ -55,11 +55,14 @@ RUN set -e; \
 # Copy the binary
 COPY --from=builder /src/build/lpass /usr/local/bin/lpass
 
-# Copy contrib folder with all scripts
-COPY contrib/ /usr/local/share/lastpass-cli/contrib/
+# Copy only the two needed scripts to /usr/local/bin and make them executable
+COPY contrib/lastpass-json-to-keepass.sh /usr/local/bin/lastpass-json-to-keepass.sh
+COPY contrib/lpass-att-export.sh /usr/local/bin/lpass-att-export.sh
+COPY keepass/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/*.sh
 
-# Make scripts executable
-RUN find /usr/local/share/lastpass-cli/contrib -name "*.sh" -exec chmod +x {} \;
+# Copy custom certificates and etc structure from root/etc to image root
+COPY keepass/root/etc /etc
 
 # Create directories for volume mounts
 RUN mkdir -p /backup /output /logs /data

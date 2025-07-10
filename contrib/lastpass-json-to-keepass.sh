@@ -342,20 +342,20 @@ EXPORT_ENTRY="Imported/EXPORT-LASTPASS"
 printf "%s\n" "$KP_PASS" | keepassxc-cli add "$KDBX_FILE" "$EXPORT_ENTRY" --notes "Backup LastPass export files (json, csv, attachments tgz)" >> "$DEBUG_LOG" 2>&1
 
 # Aggiungi il file JSON
-if [ -f "backup/lastpass-backup.json" ]; then
-  printf "%s\n" "$KP_PASS" | keepassxc-cli attachment-import "$KDBX_FILE" "$EXPORT_ENTRY" "lastpass-backup.json" "backup/lastpass-backup.json" >> "$DEBUG_LOG" 2>&1
+if [ -f "/backup/lastpass-backup.json" ]; then
+  printf "%s\n" "$KP_PASS" | keepassxc-cli attachment-import "$KDBX_FILE" "$EXPORT_ENTRY" "lastpass-backup.json" "/backup/lastpass-backup.json" >> "$DEBUG_LOG" 2>&1
 fi
 # Aggiungi il file CSV se esiste
-if [ -f "backup/lastpass-backup.csv" ]; then
-  printf "%s\n" "$KP_PASS" | keepassxc-cli attachment-import "$KDBX_FILE" "$EXPORT_ENTRY" "lastpass-backup.csv" "backup/lastpass-backup.csv" >> "$DEBUG_LOG" 2>&1
+if [ -f "/backup/lastpass-backup.csv" ]; then
+  printf "%s\n" "$KP_PASS" | keepassxc-cli attachment-import "$KDBX_FILE" "$EXPORT_ENTRY" "lastpass-backup.csv" "/backup/lastpass-backup.csv" >> "$DEBUG_LOG" 2>&1
 fi
 # Aggiungi il file LOG se esiste
-if [ -f "backup/backup-debug.log" ]; then
-  printf "%s\n" "$KP_PASS" | keepassxc-cli attachment-import "$KDBX_FILE" "$EXPORT_ENTRY" "backup-debug.log" "backup/lbackup-debug.log" >> "$DEBUG_LOG" 2>&1
+if [ -f "/backup/backup-debug.log" ]; then
+  printf "%s\n" "$KP_PASS" | keepassxc-cli attachment-import "$KDBX_FILE" "$EXPORT_ENTRY" "backup-debug.log" "/backup/backup-debug.log" >> "$DEBUG_LOG" 2>&1
 fi
 # Crea tgz della cartella attachments escludendo file MacOS
-if [ -d "backup/attachments" ]; then
-  tar --exclude='._*' --exclude='.DS_Store' --exclude='.Trashes' --exclude='.Spotlight-V100' -czf "/tmp/attachments.tgz" -C "backup" attachments
+if [ -d "/backup/attachments" ]; then
+  tar --exclude='._*' --exclude='.DS_Store' --exclude='.Trashes' --exclude='.Spotlight-V100' -czf "/tmp/attachments.tgz" -C "/backup" attachments
   printf "%s\n" "$KP_PASS" | keepassxc-cli attachment-import "$KDBX_FILE" "$EXPORT_ENTRY" "attachments.tgz" "/tmp/attachments.tgz" >> "$DEBUG_LOG" 2>&1
   rm -f /tmp/attachments.tgz
 fi
