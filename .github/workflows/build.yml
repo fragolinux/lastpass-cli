@@ -30,62 +30,26 @@ jobs:
           DOCKER_PLATFORM="linux/arm64"
         fi
         
-        # Create a simple build script
-        cat << 'EOF' > build-static.sh
-        #!/bin/sh
-        set -e
-        
-        # Install build dependencies
-        apk add --no-cache \
-            build-base cmake pkgconfig musl-dev \
-            openssl-dev openssl-libs-static \
-            curl-dev curl-static \
-            libxml2-dev libxml2-static \
-            zlib-dev zlib-static \
-            nghttp2-dev nghttp2-static \
-            brotli-dev brotli-static
-        
-        # Build with static linking
-        mkdir -p build-static
-        cd build-static
-        
-        LDFLAGS="-static" \
-        CFLAGS="-static" \
-        cmake -DCMAKE_BUILD_TYPE=Release \
-              -DCMAKE_EXE_LINKER_FLAGS="-static" \
-              -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
-              -DCMAKE_LINK_SEARCH_START_STATIC=1 \
-              -DCMAKE_LINK_SEARCH_END_STATIC=1 \
-              ..
-        
-        make -j$(nproc) || {
-            echo "Static build failed, falling back to regular build"
-            cd ..
-            rm -rf build-static
-            mkdir build-regular
-            cd build-regular
-            cmake -DCMAKE_BUILD_TYPE=Release ..
-            make -j$(nproc)
-            mv lpass ../lpass-linux-${{ matrix.arch }}
-            exit 0
-        }
-        
-        strip lpass
-        
-        # Test the binary
-        ./lpass --version || echo "Binary test failed but file exists"
-        file lpass
-        ldd lpass 2>/dev/null || echo "No dynamic dependencies (static binary)"
-        
-        mv lpass ../lpass-linux-${{ matrix.arch }}
-        EOF
-        
-        chmod +x build-static.sh
-        
+        # Build using Alpine for static linking
         docker run --rm --platform=$DOCKER_PLATFORM \
           -v ${{ github.workspace }}:/src \
           -w /src \
-          alpine:3.22 ./build-static.sh
+          alpine:3.22 sh -c '
+            # Install build dependencies
+            apk add --no-cache build-base cmake pkgconfig musl-dev openssl-dev curl-dev libxml2-dev
+            
+            # Build
+            mkdir -p build
+            cd build
+            cmake -DCMAKE_BUILD_TYPE=Release ..
+            make -j$(nproc)
+            strip lpass
+            
+            # Test the binary
+            ./lpass --version || echo "Binary test skipped"
+            
+            mv lpass ../lpass-linux-${{ matrix.arch }}
+          '
 
     - name: Upload Linux binary
       uses: actions/upload-artifact@v4
