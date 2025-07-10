@@ -223,3 +223,116 @@ Once installed,
     $ man lpass
 
 You can view the full documentation in the manpage, `man lpass` or [view it online](https://lastpass.github.io/lastpass-cli/lpass.1.html).
+
+## Docker Usage
+
+### Using Pre-built Docker Images
+
+Pre-built multi-architecture Docker images are available from GitHub Container Registry:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/fragolinux/lastpass-cli:latest
+
+# Run lpass directly
+docker run --rm -it ghcr.io/fragolinux/lastpass-cli:latest --help
+
+# Login to LastPass (interactive)
+docker run --rm -it -v ~/.lpass:/root/.lpass ghcr.io/fragolinux/lastpass-cli:latest login username@example.com
+
+# Export data with volume mapping
+docker run --rm -v ~/.lpass:/root/.lpass -v $(pwd)/output:/output ghcr.io/fragolinux/lastpass-cli:latest export > /output/export.csv
+```
+
+### Docker Image Features
+
+The Docker image includes:
+- **lastpass-cli**: The main LastPass command-line interface
+- **jq**: JSON processor for data manipulation
+- **yq**: YAML processor
+- **keepassxc-cli**: KeePassXC command-line interface
+- **All contrib scripts**: Including conversion and utility scripts
+
+### Volume Mapping
+
+Map local directories to work with your data:
+
+- `/backup` - Input directory for data to be processed
+- `/output` - Output directory for processed results
+- `/logs` - Directory for log files
+- `/data` - Working directory for temporary files
+- `/root/.lpass` - LastPass session and configuration
+
+### Running with Docker Compose
+
+Use the provided `docker-compose.yml` for automated processing:
+
+```bash
+# Create required directories
+mkdir -p backup output logs data
+
+# Run the automated processor
+docker-compose up lastpass-processor
+
+# Or run in interactive mode for manual operations
+docker-compose --profile manual up lastpass-cli-manual
+
+# Connect to the running container
+docker-compose --profile manual exec lastpass-cli-manual bash
+```
+
+### Custom Scripts
+
+The image includes all scripts from the `contrib/` directory. You can override the entrypoint to run custom scripts:
+
+```bash
+# Run a specific contrib script
+docker run --rm -v $(pwd)/data:/data ghcr.io/fragolinux/lastpass-cli:latest /usr/local/share/lastpass-cli/contrib/your-script.sh
+
+# Use as a base for your own automation
+docker run --rm -it -v $(pwd):/workspace ghcr.io/fragolinux/lastpass-cli:latest bash -c "
+  cd /workspace
+  # Your custom commands here
+  lpass export --format=json > backup.json
+  jq '.[] | select(.folder == \"Important\")' backup.json > important.json
+"
+```
+
+### Environment Variables
+
+When using docker-compose, you can set these environment variables:
+
+- `BACKUP_DIR`: Source directory for input files (default: `/backup`)
+- `OUTPUT_DIR`: Destination directory for processed files (default: `/output`)
+- `LOGS_DIR`: Directory for log files (default: `/logs`)
+- `DEVELOPMENT_MODE`: Set to `true` to keep container running for debugging
+
+### Examples
+
+#### Convert LastPass Export to KeePass Format
+
+```bash
+# Place your LastPass JSON export in ./backup/
+echo '{"export": "data"}' > backup/lastpass-export.json
+
+# Run the conversion
+docker-compose up lastpass-processor
+
+# Check results in ./output/ and logs in ./logs/
+```
+
+#### Interactive Data Processing
+
+```bash
+# Start an interactive session
+docker run --rm -it \
+  -v $(pwd)/backup:/backup \
+  -v $(pwd)/output:/output \
+  -v ~/.lpass:/root/.lpass \
+  ghcr.io/fragolinux/lastpass-cli:latest bash
+
+# Inside the container, you can use all tools:
+# lpass login your@email.com
+# lpass export --format=json | jq '.[] | select(.folder == "Work")' > /output/work-passwords.json
+# keepassxc-cli create /output/work-passwords.kdbx
+```
