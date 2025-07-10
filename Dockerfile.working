@@ -1,0 +1,75 @@
+FROM debian:bookworm-slim AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        pkg-config \
+        libcurl4-openssl-dev \
+        libxml2-dev \
+        libssl-dev \
+        ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy source code
+WORKDIR /src
+COPY . .
+
+# Build binary
+RUN mkdir -p build && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j$(nproc) && \
+    strip lpass
+
+# Final runtime image
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime tools and dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        libxml2 \
+        libssl3 \
+        libcurl4 \
+        jq \
+        bash \
+        ca-certificates \
+        wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install yq manually
+RUN wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && \
+    chmod +x /usr/local/bin/yq
+
+# Try to install keepassxc-cli if available
+RUN apt-get update && \
+    (apt-get install -y --no-install-recommends keepassxc || echo "keepassxc not available in this Debian version") && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy the binary
+COPY --from=builder /src/build/lpass /usr/local/bin/lpass
+
+# Copy contrib folder with all scripts
+COPY contrib/ /usr/local/share/lastpass-cli/contrib/
+
+# Make scripts executable
+RUN find /usr/local/share/lastpass-cli/contrib -name "*.sh" -exec chmod +x {} \;
+
+# Create directories for volume mounts
+RUN mkdir -p /backup /output /logs /data
+
+# Set working directory
+WORKDIR /data
+
+# Default entrypoint - can be overridden
+ENTRYPOINT ["/usr/local/bin/lpass"]
+
+# Add a label for better identification
+LABEL org.opencontainers.image.description="LastPass CLI with additional tools (jq, yq, keepassxc-cli) on Debian"
+LABEL org.opencontainers.image.source="https://github.com/fragolinux/lastpass-cli"

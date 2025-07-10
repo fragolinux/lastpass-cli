@@ -1,2 +1,23 @@
+# Build artifacts
 /build/
 /test/.lpass
+
+# Git files  
+.git/
+.github/
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile*
+docker-compose.yml
