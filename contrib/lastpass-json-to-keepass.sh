@@ -31,11 +31,20 @@ log "Output directory: ${OUTPUT_DIR}"
 log "Logs directory: ${LOGS_DIR}"
 
 # Check if required tools are available
-for tool in jq yq keepassxc-cli lpass; do
+for tool in jq yq lpass; do
     if ! command -v "$tool" &> /dev/null; then
         error_exit "Required tool '$tool' is not available"
     fi
 done
+
+# Check for optional tools
+KEEPASSXC_AVAILABLE=false
+if command -v keepassxc-cli &> /dev/null; then
+    KEEPASSXC_AVAILABLE=true
+    log "keepassxc-cli is available"
+else
+    log "WARNING: keepassxc-cli is not available - some features may be limited"
+fi
 
 log "All required tools are available"
 
