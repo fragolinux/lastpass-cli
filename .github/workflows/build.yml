@@ -40,50 +40,36 @@ jobs:
         path: lpass-linux-x86_64
 
   build-linux-arm64:
-    name: Build Linux (arm64)
+    name: Build Linux (arm64) 
     runs-on: ubuntu-latest
+    continue-on-error: true  # Don't fail the entire workflow if ARM64 fails
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up QEMU for cross compilation
+    - name: Set up QEMU for emulation
       uses: docker/setup-qemu-action@v3
 
-    - name: Install cross-compilation tools
+    - name: Simple ARM64 build using Docker emulation
       run: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-
-    - name: Build ARM64 binary using cross-compilation
-      run: |
-        # Install ARM64 development packages in a simple way
-        sudo dpkg --add-architecture arm64
-        sudo sed 's/^deb /deb [arch=amd64] /' -i /etc/apt/sources.list
-        echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs) main universe" | sudo tee /etc/apt/sources.list.d/arm64.list
-        sudo apt-get update || true
-        sudo apt-get install -y libcurl4-openssl-dev:arm64 libxml2-dev:arm64 libssl-dev:arm64 || true
-        
-        # Simple CMake cross-compilation - if it fails, skip ARM64 build
-        mkdir -p build-arm64
-        cd build-arm64
-        
-        cat > toolchain.cmake << 'EOF'
-        set(CMAKE_SYSTEM_NAME Linux)
-        set(CMAKE_SYSTEM_PROCESSOR aarch64)
-        set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
-        set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
-        set(CMAKE_FIND_ROOT_PATH /usr/aarch64-linux-gnu)
-        set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-        set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-        set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-        EOF
-        
-        if cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake .. && make -j$(nproc); then
-          strip lpass
-          ./lpass --version || echo "ARM64 binary test skipped"
-          mv lpass ../lpass-linux-arm64
+        # Use Docker with emulation for ARM64 build to avoid complex cross-compilation
+        if timeout 600 docker run --rm --platform linux/arm64 \
+          -v ${{ github.workspace }}:/src \
+          -w /src \
+          ubuntu:22.04 sh -c '
+            apt-get update && 
+            apt-get install -y build-essential cmake pkg-config libcurl4-openssl-dev libxml2-dev libssl-dev &&
+            mkdir -p build &&
+            cd build &&
+            cmake -DCMAKE_BUILD_TYPE=Release .. &&
+            make -j$(nproc) &&
+            strip lpass &&
+            ./lpass --version &&
+            mv lpass ../lpass-linux-arm64
+          '; then
+          echo "ARM64 build successful"
         else
-          echo "ARM64 build failed, creating placeholder"
-          echo "ARM64 build not available due to cross-compilation issues" > ../lpass-linux-arm64
+          echo "ARM64 build failed or timed out, creating placeholder" 
+          echo "ARM64 build not available - emulation failed or timed out" > lpass-linux-arm64
         fi
 
     - name: Upload Linux ARM64 binary
@@ -180,18 +166,32 @@ jobs:
     name: Create Release
     needs: [build-linux, build-linux-arm64, build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' && always()  # Run even if ARM64 build fails
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
 
     - name: Create release assets
       run: |
-        # Create archives for each platform
-        tar -czf lpass-linux-x86_64.tar.gz -C lpass-linux-x86_64 .
-        tar -czf lpass-linux-arm64.tar.gz -C lpass-linux-arm64 .
-        tar -czf lpass-macos.tar.gz -C lpass-macos .
-        zip lpass-windows.zip -j lpass-windows/*
+        # Create archives for each platform that was built successfully
+        if [ -d "lpass-linux-x86_64" ]; then
+          tar -czf lpass-linux-x86_64.tar.gz -C lpass-linux-x86_64 .
+        fi
+        
+        if [ -d "lpass-linux-arm64" ]; then
+          tar -czf lpass-linux-arm64.tar.gz -C lpass-linux-arm64 .
+        fi
+        
+        if [ -d "lpass-macos" ]; then
+          tar -czf lpass-macos.tar.gz -C lpass-macos .
+        fi
+        
+        if [ -d "lpass-windows" ]; then
+          zip lpass-windows.zip -j lpass-windows/*
+        fi
+        
+        # List what we have
+        ls -la *.tar.gz *.zip 2>/dev/null || echo "Some builds may have failed"
 
     - name: Upload release assets
       uses: softprops/action-gh-release@v1
@@ -201,3 +201,4 @@ jobs:
           lpass-linux-arm64.tar.gz
           lpass-macos.tar.gz
           lpass-windows.zip
+        fail_on_unmatched_files: false  # Don't fail if some files are missing

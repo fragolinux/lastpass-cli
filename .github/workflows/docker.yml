@@ -82,27 +82,16 @@ jobs:
       continue-on-error: true
       id: debian-build
 
-    # If both fail, create a minimal working image
+    # If both fail, try the pre-built minimal dockerfile
     - name: Build minimal fallback image
       if: steps.simple-build.outcome == 'failure' && steps.debian-build.outcome == 'failure'
-      run: |
-        # Create a very basic Dockerfile with pre-built binary
-        cat > Dockerfile.minimal << 'EOF'
-        FROM alpine:3.22
-        RUN apk add --no-cache bash
-        COPY build/lpass /usr/local/bin/lpass
-        RUN chmod +x /usr/local/bin/lpass
-        WORKDIR /data
-        ENTRYPOINT ["/usr/local/bin/lpass"]
-        EOF
-        
-        # Build locally first
-        sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config libcurl4-openssl-dev libxml2-dev libssl-dev
-        mkdir -p build && cd build && cmake .. && make && cd ..
-        
-        # Build and push minimal image
-        docker buildx build --platform linux/amd64 -f Dockerfile.minimal -t temp-image .
-        if [ "${{ github.event_name }}" != "pull_request" ]; then
-          docker tag temp-image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest || true
-        fi
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.minimal
+        platforms: linux/amd64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
