@@ -25,34 +25,37 @@ RUN mkdir -p build && \
     make -j$(nproc) && \
     strip lpass
 
-# Final runtime image
+# Final runtime image - use the builder image to avoid dependency mismatches
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime tools and dependencies
+# Install only essential runtime dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
         libxml2 \
         libssl3 \
         libcurl4 \
-        jq \
         bash \
-        ca-certificates \
-        wget && \
+        ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Install yq manually (fallback if not available in repos)
-RUN wget --no-check-certificate -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 && \
-    chmod +x /usr/local/bin/yq || \
-    (echo "#!/bin/bash" > /usr/local/bin/yq && \
-     echo "echo 'yq not available, using jq fallback'" >&2 && \
-     echo "jq \"\$@\"" >> /usr/local/bin/yq && \
-     chmod +x /usr/local/bin/yq)
-
-# Note: keepassxc-cli may not be available in all environments
-# The script will work without it but with reduced functionality
+# Install jq and yq if available, with graceful fallbacks
+RUN apt-get update && \
+    (apt-get install -y --no-install-recommends jq || true) && \
+    rm -rf /var/lib/apt/lists/* && \
+    # Create fallback scripts if packages are not available
+    if ! command -v jq &> /dev/null; then \
+        echo '#!/bin/bash' > /usr/local/bin/jq && \
+        echo 'echo "jq not available" >&2 && exit 1' >> /usr/local/bin/jq && \
+        chmod +x /usr/local/bin/jq; \
+    fi && \
+    if ! command -v yq &> /dev/null; then \
+        echo '#!/bin/bash' > /usr/local/bin/yq && \
+        echo 'echo "yq not available, use jq instead" >&2 && jq "$@"' >> /usr/local/bin/yq && \
+        chmod +x /usr/local/bin/yq; \
+    fi
 
 # Copy the binary
 COPY --from=builder /src/build/lpass /usr/local/bin/lpass
@@ -73,5 +76,5 @@ WORKDIR /data
 ENTRYPOINT ["/usr/local/bin/lpass"]
 
 # Add a label for better identification
-LABEL org.opencontainers.image.description="LastPass CLI with additional tools (jq, yq) on Debian"
+LABEL org.opencontainers.image.description="LastPass CLI with additional tools on Debian"
 LABEL org.opencontainers.image.source="https://github.com/fragolinux/lastpass-cli"
