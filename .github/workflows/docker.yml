@@ -23,6 +23,29 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    # Try to build binary on host for fallback
+    - name: Setup build dependencies
+      run: |
+        sudo apt-get update || true
+        sudo apt-get install -y --no-install-recommends \
+          build-essential \
+          cmake \
+          pkg-config \
+          libcurl4-openssl-dev \
+          libxml2-dev \
+          libssl-dev || true
+      continue-on-error: true
+
+    - name: Build binary on host (fallback for Docker)
+      run: |
+        make clean || true
+        make || echo "Host build failed, will try Docker build"
+        if [ -f build/lpass ]; then
+          cp build/lpass ./lpass
+          echo "Host binary built successfully"
+        fi
+      continue-on-error: true
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
 
@@ -51,7 +74,7 @@ jobs:
           type=sha
           type=raw,value=latest,enable={{is_default_branch}}
 
-    # Try simple Alpine-based build first
+    # Try simple Ubuntu-based build first
     - name: Build and push simple Docker image
       uses: docker/build-push-action@v5
       with:
@@ -89,6 +112,22 @@ jobs:
       with:
         context: .
         file: ./Dockerfile.minimal
+        platforms: linux/amd64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+      continue-on-error: true
+      id: minimal-build
+
+    # Final fallback: offline build with pre-built binary
+    - name: Build offline fallback image
+      if: steps.simple-build.outcome == 'failure' && steps.debian-build.outcome == 'failure' && steps.minimal-build.outcome == 'failure'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.offline
         platforms: linux/amd64
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.meta.outputs.tags }}
